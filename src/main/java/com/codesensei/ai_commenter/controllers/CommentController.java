@@ -3,6 +3,7 @@ package com.codesensei.ai_commenter.controllers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.codesensei.ai_commenter.models.CodeResponse;
 import com.codesensei.ai_commenter.services.CommentService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
