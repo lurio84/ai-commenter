@@ -17,7 +17,7 @@ import java.util.Map;
 @Service
 public class CommentService {
 
-    @Value("${external.api.url}")
+    @Value("${OPENROUTER_API_KEY}")
     private String apiUrl; // URL definida en application.properties
 
     public CodeResponse getComment(String code, String description, String codeLanguage, String userLanguage) {
