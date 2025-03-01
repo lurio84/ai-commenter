@@ -11,5 +11,4 @@ public class CommentService {
         // TODO: Implementar llamada a API OpenAI y lógica del servicio
         return null;
     }
-
 }
