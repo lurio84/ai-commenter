@@ -1,6 +1,5 @@
 package com.codesensei.ai_commenter.services;
 
-import com.codesensei.ai_commenter.models.CodeResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -8,6 +7,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+
+import com.codesensei.ai_commenter.dtos.CodeResponseDTO;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,7 +21,7 @@ public class CommentService {
     @Value("${OPENROUTER_API_KEY}")
     private String apiUrl; // URL definida en application.properties
 
-    public CodeResponse getComment(String code, String description, String codeLanguage, String userLanguage) {
+    public CodeResponseDTO getComment(String code, String description, String codeLanguage, String userLanguage) {
         System.out.println(apiUrl);
         // Construir el payload JSON
         Map<String, Object> payload = new HashMap<>();
@@ -50,11 +51,11 @@ public class CommentService {
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(payload, headers);
         RestTemplate restTemplate = new RestTemplate();
-        CodeResponse response = new CodeResponse();
+        CodeResponseDTO response = new CodeResponseDTO();
 
         try {
-            ResponseEntity<CodeResponse> responseEntity = restTemplate.postForEntity(apiUrl, requestEntity,
-                    CodeResponse.class);
+            ResponseEntity<CodeResponseDTO> responseEntity = restTemplate.postForEntity(apiUrl, requestEntity,
+                    CodeResponseDTO.class);
             response = responseEntity.getBody();
         } catch (Exception e) {
             response.setSuccess(false);

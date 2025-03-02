@@ -1,9 +1,9 @@
-package com.codesensei.ai_commenter.models;
+package com.codesensei.ai_commenter.dtos;
 
 import lombok.Data;
 
 @Data
-public class CodeResponse {
+public class CodeResponseDTO {
     String commentedCode; // Codigo con los comentarios generados
     String message; // Mensaje informativo sobre la operacion
     boolean success; // Indica si la operacion fue exitosa
