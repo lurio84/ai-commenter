@@ -15,8 +15,8 @@ public class CommentController {
     private CommentService commentService;
 
     @PostMapping("/comment")
-    public ResponseEntity<CodeResponseDTO> getComment(@RequestBody CodeRequestDTO requestDTO) {
-        CodeResponseDTO response = commentService.getComment(requestDTO);
+    public ResponseEntity<CodeResponseDTO> generateComment(@RequestBody CodeRequestDTO codeRequestDTO) {
+        CodeResponseDTO response = commentService.generateComment(codeRequestDTO);
         return ResponseEntity.ok(response);
     }
 }

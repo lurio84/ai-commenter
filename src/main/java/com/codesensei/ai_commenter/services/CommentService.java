@@ -1,67 +1,70 @@
 package com.codesensei.ai_commenter.services;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import com.codesensei.ai_commenter.dtos.CodeRequestDTO;
 import com.codesensei.ai_commenter.dtos.CodeResponseDTO;
+import com.codesensei.ai_commenter.dtos.OpenRouterRequestDTO;
+import com.codesensei.ai_commenter.dtos.OpenRouterResponseDTO;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 public class CommentService {
 
     @Value("${OPENROUTER_API_KEY}")
-    private String apiUrl; // URL definida en application.properties
+    private String apiKey;
 
-    public CodeResponseDTO getComment(String code, String description, String codeLanguage, String userLanguage) {
-        System.out.println(apiUrl);
-        // Construir el payload JSON
-        Map<String, Object> payload = new HashMap<>();
+    @Value("${OPENROUTER_API_URL}")
+    private String apiUrl;
 
-        List<Map<String, String>> messages = new ArrayList<>();
+    private final RestTemplate restTemplate = new RestTemplate();
 
-        Map<String, String> systemMessage = new HashMap<>();
-        systemMessage.put("role", "system");
-        systemMessage.put("content",
-                "You are a Java documentation assistant. Always return only the JavaDoc comment without any extra text. Language: English");
+    public CodeResponseDTO generateComment(CodeRequestDTO requestDTO) {
+        // Convertir CodeRequestDTO a OpenRouterRequestDTO
+        OpenRouterRequestDTO openRouterRequest = transformToOpenRouterRequest(requestDTO);
 
-        Map<String, String> userMessage = new HashMap<>();
-        userMessage.put("role", "user");
-        userMessage.put("content", "Comment the following Java method:\n" + code);
-
-        messages.add(systemMessage);
-        messages.add(userMessage);
-
-        payload.put("messages", messages);
-        payload.put("model", "deepseek/deepseek-chat:free");
-        payload.put("temperature", 0.2);
-        payload.put("max_tokens", 100);
-
-        // Configurar headers sin autenticación
+        // Configurar headers
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Authorization", "Bearer " + apiKey);
 
-        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(payload, headers);
-        RestTemplate restTemplate = new RestTemplate();
-        CodeResponseDTO response = new CodeResponseDTO();
+        // Enviar solicitud a OpenRouter
+        HttpEntity<OpenRouterRequestDTO> requestEntity = new HttpEntity<>(openRouterRequest, headers);
 
         try {
-            ResponseEntity<CodeResponseDTO> responseEntity = restTemplate.postForEntity(apiUrl, requestEntity,
-                    CodeResponseDTO.class);
-            response = responseEntity.getBody();
-        } catch (Exception e) {
-            response.setSuccess(false);
-            response.setMessage("Error al realizar la llamada a la API: " + e.getMessage());
-        }
+            ResponseEntity<OpenRouterResponseDTO> responseEntity = restTemplate.exchange(
+                    apiUrl, HttpMethod.POST, requestEntity, OpenRouterResponseDTO.class);
 
-        return response;
+            // Procesar respuesta y transformarla a CodeResponseDTO
+            return processOpenRouterResponse(responseEntity.getBody());
+        } catch (Exception e) {
+            return new CodeResponseDTO(null, "Error en OpenRouter: " + e.getMessage(), false);
+        }
+    }
+
+    // Metodo para transformar nuestro DTO al formato de OpenRouter
+    private OpenRouterRequestDTO transformToOpenRouterRequest(CodeRequestDTO requestDTO) {
+        List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content",
+                "You are a " + requestDTO.getCodeLanguage()
+                        + " documentation assistant. Always return only the JavaDoc comment without any extra text. Language: "
+                        + requestDTO.getUserLanguage()));
+        messages.add(Map.of("role", "user", "content",
+                "Comment the following code: " + requestDTO.getCode()));
+        System.out.println("Request: " + messages);
+        return new OpenRouterRequestDTO(messages, "deepseek/deepseek-chat:free", 0.2, 100);
+    }
+
+    // Metodo para transformar la respuesta de OpenRouter a nuestro DTO
+    private CodeResponseDTO processOpenRouterResponse(OpenRouterResponseDTO responseBody) {
+        if (responseBody != null && responseBody.getChoices() != null && !responseBody.getChoices().isEmpty()) {
+            String commentedCode = responseBody.getChoices().get(0).getMessage().getContent();
+            return new CodeResponseDTO(commentedCode, "Comentario generado con éxito", true);
+        }
+        return new CodeResponseDTO(null, "Respuesta de OpenRouter no válida", false);
     }
 }
