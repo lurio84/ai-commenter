@@ -3,18 +3,74 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
 
+// Regulars expresions to detect methods according to programming language
+const methodPatterns: Record<string, RegExp> = {
+	"javascript": /(?:function|const|let|var|async)?\s*\w+\s*\(.*\)\s*{/g,
+	"typescript": /(?:public|private|protected|static)?\s*\w+\s*\(.*\)\s*{/g,
+	"java": /(public|private|protected|static)?\s*\w+\s*\(.*\)\s*{/g,
+	"python": /def\s+\w+\(.*\):/g
+};
+
+const decorationType = vscode.window.createTextEditorDecorationType({
+	gutterIconPath: vscode.Uri.file(__dirname + '/icon.png'),
+	gutterIconSize: 'auto'
+});
+
+// Function to detect methods
+function detectMethods(editor: vscode.TextEditor) {
+	const languageId = editor.document.languageId;
+	const pattern = methodPatterns[languageId];
+
+	if (!pattern) return [];
+
+	const text = editor.document.getText();
+	const matches = [];
+
+	let match;
+	while ((match = pattern.exec(text)) !== null) {
+		const startPos = editor.document.positionAt(match.index);
+		matches.push(new vscode.Range(startPos, startPos));
+	}
+
+	return matches;
+}
+
+// Function to update the decorations (icon)
+function updateDecorations(editor: vscode.TextEditor) {
+	const methodRanges = detectMethods(editor);
+	editor.setDecorations(decorationType, methodRanges);
+}
+
+
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "ai-commenter" is now active!');
+	// Logic to change icon decoration
+	vscode.window.onDidChangeActiveTextEditor(editor => {
+		if (editor) updateDecorations(editor);
+	}, null, context.subscriptions);
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand('ai-commenter.commentMethod', async () => {
+	vscode.workspace.onDidChangeTextDocument(event => {
+		const editor = vscode.window.activeTextEditor;
+		if (editor && event.document === editor.document) {
+			updateDecorations(editor);
+		}
+	}, null, context.subscriptions);
+
+	// Add funcionality when user click on icon
+	vscode.languages.registerCodeLensProvider("*", {
+		provideCodeLenses(document, token) {
+			const methodRanges = detectMethods(vscode.window.activeTextEditor!);
+			return methodRanges.map(range => new vscode.CodeLens(range, {
+				title: "💬 Comentar",
+				command: "ai-commenter.commentMethod",
+				arguments: [document, range]
+			}));
+		}
+	});
+
+	let disposable = vscode.commands.registerCommand('ai-commenter.commentMethod', async (document: vscode.TextDocument, range: vscode.Range) => {
 		// Obtain file editor
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
@@ -22,10 +78,13 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
-		// Obtain selected code
-		const selection = editor.selection;
-		const selectedText = editor.document.getText(selection);
+		if (!range) {
+			vscode.window.showErrorMessage("No se pudo determinar el rango del método.");
+			return;
+		}
 
+		// Obtain selected code
+		const selectedText = editor.document.getText(range);
 		if (!selectedText) {
 			vscode.window.showErrorMessage("Please select a method to comment");
 			return;
@@ -57,7 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 			// Apply the comment in the selected code
 			editor.edit(editBuilder => {
-				editBuilder.insert(selection.start, comment + "\n");
+				editBuilder.insert(range.start, comment + "\n");
 			});
 
 			vscode.window.showInformationMessage("Comment successfully added.");
