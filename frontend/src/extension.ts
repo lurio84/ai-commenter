@@ -61,7 +61,12 @@ export function activate(context: vscode.ExtensionContext) {
 	// Add funcionality when user click on icon
 	vscode.languages.registerCodeLensProvider("*", {
 		provideCodeLenses(document, token) {
-			const methodRanges = detectMethods(vscode.window.activeTextEditor!);
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) {
+				return [];
+			}
+
+			const methodRanges = detectMethods(editor);
 			return methodRanges.map(range => new vscode.CodeLens(range, {
 				title: "💬 Comentar",
 				command: "ai-commenter.commentMethod",
