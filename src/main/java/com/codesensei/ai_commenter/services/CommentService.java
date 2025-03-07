@@ -40,6 +40,7 @@ public class CommentService {
                     apiUrl, HttpMethod.POST, requestEntity, OpenRouterResponseDTO.class);
 
             // Procesar respuesta y transformarla a CodeResponseDTO
+            System.out.println("Response: " + responseEntity.getBody());
             return processOpenRouterResponse(responseEntity.getBody());
         } catch (Exception e) {
             return new CodeResponseDTO(null, "Error en OpenRouter: " + e.getMessage(), false);
@@ -63,6 +64,7 @@ public class CommentService {
     private CodeResponseDTO processOpenRouterResponse(OpenRouterResponseDTO responseBody) {
         if (responseBody != null && responseBody.getChoices() != null && !responseBody.getChoices().isEmpty()) {
             String commentedCode = responseBody.getChoices().get(0).getMessage().getContent();
+            System.out.println("Response content: " + commentedCode);
             return new CodeResponseDTO(commentedCode, "Comentario generado con éxito", true);
         }
         return new CodeResponseDTO(null, "Respuesta de OpenRouter no válida", false);
