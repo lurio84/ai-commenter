@@ -2,11 +2,38 @@ import * as vscode from "vscode";
 import axios from "axios";
 
 // Function to get all methods in the file using VS Code's built-in symbol provider
-async function getAllMethodsInFile(document: vscode.TextDocument): Promise<vscode.SymbolInformation[] | undefined> {
-	return await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+async function getAllMethodsInFile(document: vscode.TextDocument): Promise<vscode.DocumentSymbol[] | undefined> {
+	const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
 		"vscode.executeDocumentSymbolProvider",
 		document.uri
 	);
+
+	if (!symbols) {
+		console.log("❌ No symbols found in the file.");
+		return undefined;
+	}
+
+	// Extract methods in a way that works for multiple languages
+	function extractMethods(symbols: vscode.DocumentSymbol[]): vscode.DocumentSymbol[] {
+		let methods: vscode.DocumentSymbol[] = [];
+
+		for (const symbol of symbols) {
+			if (symbol.kind === vscode.SymbolKind.Method || symbol.kind === vscode.SymbolKind.Function) {
+				methods.push(symbol);
+			}
+
+			// Some languages (e.g., Java) nest methods inside classes → Check children
+			if (symbol.children.length > 0) {
+				methods = methods.concat(extractMethods(symbol.children));
+			}
+		}
+
+		return methods;
+	}
+
+	const methods = extractMethods(symbols);
+
+	return methods;
 }
 
 // Function to get the current method where the cursor is
@@ -18,25 +45,21 @@ async function getCurrentMethod(): Promise<vscode.DocumentSymbol | undefined> {
 
 	const document = editor.document;
 	const position = editor.selection.active;
+	const methods = await getAllMethodsInFile(document);
 
-	// Use `executeDocumentSymbolProvider` to get the document structure
-	const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-		"vscode.executeDocumentSymbolProvider",
-		document.uri
-	);
-
-	if (!symbols) {
-		console.error("❌ No symbols found in the file.");
+	if (!methods || methods.length === 0) {
+		console.log("❌ No methods found in the file.");
 		return undefined;
 	}
 
-	// Filter only methods (ignore classes, variables, etc.)
-	const methods = symbols.flatMap(symbol =>
-		symbol.kind === vscode.SymbolKind.Method ? [symbol] : symbol.children.filter(child => child.kind === vscode.SymbolKind.Method)
-	);
-
-	// Find the method where the cursor is
+	// Find the method that contains the cursor position
 	const currentMethod = methods.find(method => method.range.contains(position));
+
+	if (currentMethod) {
+		console.log("✅ Current method detected:", currentMethod.name);
+	} else {
+		console.log("⚠️ No matching method found for cursor position.");
+	}
 
 	return currentMethod;
 }
@@ -89,7 +112,7 @@ class DynamicCodeLensProvider implements vscode.CodeLensProvider {
 	}
 }
 
-// 🚀 Activating the Extension
+// Activating the Extension
 export function activate(context: vscode.ExtensionContext) {
 	console.log("AI Commenter Extension activated.");
 
