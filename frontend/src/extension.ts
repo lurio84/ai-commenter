@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import axios from "axios";
 
-// 🛠 Function to get all methods in the file using VS Code's built-in symbol provider
+// Function to get all methods in the file using VS Code's built-in symbol provider
 async function getAllMethodsInFile(document: vscode.TextDocument): Promise<vscode.SymbolInformation[] | undefined> {
 	return await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
 		"vscode.executeDocumentSymbolProvider",
@@ -9,8 +9,8 @@ async function getAllMethodsInFile(document: vscode.TextDocument): Promise<vscod
 	);
 }
 
-// 🎯 Function to get the current method where the cursor is
-async function getCurrentMethod(): Promise<vscode.SymbolInformation | undefined> {
+// Function to get the current method where the cursor is
+async function getCurrentMethod(): Promise<vscode.DocumentSymbol | undefined> {
 	const editor = vscode.window.activeTextEditor;
 	if (!editor) {
 		return undefined;
@@ -18,16 +18,31 @@ async function getCurrentMethod(): Promise<vscode.SymbolInformation | undefined>
 
 	const document = editor.document;
 	const position = editor.selection.active;
-	const symbols = await getAllMethodsInFile(document);
+
+	// Use `executeDocumentSymbolProvider` to get the document structure
+	const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+		"vscode.executeDocumentSymbolProvider",
+		document.uri
+	);
 
 	if (!symbols) {
+		console.error("❌ No symbols found in the file.");
 		return undefined;
 	}
 
-	return symbols.find(symbol => symbol.location.range.contains(position));
+	// Filter only methods (ignore classes, variables, etc.)
+	const methods = symbols.flatMap(symbol =>
+		symbol.kind === vscode.SymbolKind.Method ? [symbol] : symbol.children.filter(child => child.kind === vscode.SymbolKind.Method)
+	);
+
+	// Find the method where the cursor is
+	const currentMethod = methods.find(method => method.range.contains(position));
+
+	return currentMethod;
 }
 
-// 🏗 Dynamic CodeLens Provider that updates when the cursor moves
+
+// Dynamic CodeLens Provider that updates when the cursor moves
 class DynamicCodeLensProvider implements vscode.CodeLensProvider {
 	private codeLenses: vscode.CodeLens[] = [];
 	private _onDidChangeCodeLenses: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
@@ -35,8 +50,8 @@ class DynamicCodeLensProvider implements vscode.CodeLensProvider {
 	public readonly onDidChangeCodeLenses: vscode.Event<void> = this._onDidChangeCodeLenses.event;
 
 	constructor() {
-		vscode.window.onDidChangeTextEditorSelection(this.updateCodeLens, this);
-		vscode.window.onDidChangeActiveTextEditor(this.updateCodeLens, this);
+		vscode.window.onDidChangeTextEditorSelection(() => this.updateCodeLens(), this);
+		vscode.window.onDidChangeActiveTextEditor(() => this.updateCodeLens(), this);
 	}
 
 	async updateCodeLens() {
@@ -51,18 +66,22 @@ class DynamicCodeLensProvider implements vscode.CodeLensProvider {
 		const currentMethod = await getCurrentMethod();
 
 		if (!currentMethod) {
-			this.codeLenses = []; // No method found → Remove CodeLens
+			this.codeLenses = [];
 		} else {
+			// Place CodeLens exactly one line above the method start position
+			const methodStartLine = currentMethod.range.start.line;
+			const codeLensPosition = new vscode.Position(Math.max(0, methodStartLine - 0), 0);
+
 			this.codeLenses = [
-				new vscode.CodeLens(currentMethod.location.range, {
-					title: "💬",
+				new vscode.CodeLens(new vscode.Range(codeLensPosition, codeLensPosition), {
+					title: "💭",
 					command: "ai-commenter.commentMethod",
-					arguments: [document, currentMethod.location.range]
+					arguments: [document, currentMethod.range]
 				})
 			];
 		}
 
-		this._onDidChangeCodeLenses.fire();
+		this._onDidChangeCodeLenses.fire(); // 🔹 Force UI refresh
 	}
 
 	provideCodeLenses(): vscode.CodeLens[] {
