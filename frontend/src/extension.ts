@@ -1,91 +1,144 @@
-import * as vscode from 'vscode';
-import axios from 'axios';
+import * as vscode from "vscode";
+import axios from "axios";
 
+// 🛠 Function to get all methods in the file using VS Code's built-in symbol provider
+async function getAllMethodsInFile(document: vscode.TextDocument): Promise<vscode.SymbolInformation[] | undefined> {
+	return await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+		"vscode.executeDocumentSymbolProvider",
+		document.uri
+	);
+}
 
-export function activate(context: vscode.ExtensionContext) {
+// 🎯 Function to get the current method where the cursor is
+async function getCurrentMethod(): Promise<vscode.SymbolInformation | undefined> {
+	const editor = vscode.window.activeTextEditor;
+	if (!editor) {
+		return undefined;
+	}
 
-	console.log('Congratulations, your extension "ai-commenter" is now active!');
+	const document = editor.document;
+	const position = editor.selection.active;
+	const symbols = await getAllMethodsInFile(document);
 
-	let disposable = vscode.commands.registerCommand('ai-commenter.commentMethod', async () => {
-		// Obtain file editor
+	if (!symbols) {
+		return undefined;
+	}
+
+	return symbols.find(symbol => symbol.location.range.contains(position));
+}
+
+// 🏗 Dynamic CodeLens Provider that updates when the cursor moves
+class DynamicCodeLensProvider implements vscode.CodeLensProvider {
+	private codeLenses: vscode.CodeLens[] = [];
+	private _onDidChangeCodeLenses: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
+
+	public readonly onDidChangeCodeLenses: vscode.Event<void> = this._onDidChangeCodeLenses.event;
+
+	constructor() {
+		vscode.window.onDidChangeTextEditorSelection(this.updateCodeLens, this);
+		vscode.window.onDidChangeActiveTextEditor(this.updateCodeLens, this);
+	}
+
+	async updateCodeLens() {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
-			vscode.window.showErrorMessage("There is no file open.");
+			this.codeLenses = [];
+			this._onDidChangeCodeLenses.fire();
 			return;
 		}
 
-		// Obtain selected code
-		const selection = editor.selection;
-		const selectedText = editor.document.getText(selection);
+		const document = editor.document;
+		const currentMethod = await getCurrentMethod();
 
-		if (!selectedText) {
-			vscode.window.showErrorMessage("Please select a method to comment");
-			return;
+		if (!currentMethod) {
+			this.codeLenses = []; // No method found → Remove CodeLens
+		} else {
+			this.codeLenses = [
+				new vscode.CodeLens(currentMethod.location.range, {
+					title: "💬",
+					command: "ai-commenter.commentMethod",
+					arguments: [document, currentMethod.location.range]
+				})
+			];
 		}
 
-		// Obtain programming language from the file
-		const languageId = editor.document.languageId; // ej: "javascript", "java", "python"
+		this._onDidChangeCodeLenses.fire();
+	}
 
-		// Define the default language (you can change it anytime)
-		const config = vscode.workspace.getConfiguration("ai-commenter");
-		const defaultLanguage = config.get<string>("defaultLanguage", "en");
+	provideCodeLenses(): vscode.CodeLens[] {
+		return this.codeLenses;
+	}
+}
 
-		try {
-			// Show progress notification while calling the API
-			await vscode.window.withProgress(
-				{
-					location: vscode.ProgressLocation.Notification, // Bottom-right corner
-					title: "Generating AI-powered comment...",
-					cancellable: false // Cannot be canceled
-				},
-				async (progress) => {
-					progress.report({ message: "Processing request..." });
+// 🚀 Activating the Extension
+export function activate(context: vscode.ExtensionContext) {
+	console.log("AI Commenter Extension activated.");
 
-					// Call the backend
-					const response = await axios.post("http://localhost:8080/api/comment", { // CHANGE TO SERVER URL
-						code: selectedText,
-						description: "",
-						codeLanguage: languageId,
-						userLanguage: defaultLanguage
-					});
+	const codeLensProvider = new DynamicCodeLensProvider();
+	context.subscriptions.push(vscode.languages.registerCodeLensProvider("*", codeLensProvider));
 
-					// Receive the comment from the backend
-					const comment = response.data.commentedCode;
-					console.log("Response: ", response.data);
+	let disposable = vscode.commands.registerCommand(
+		"ai-commenter.commentMethod",
+		async (document?: vscode.TextDocument, range?: vscode.Range) => {
+			if (!document || !range) {
+				return;
+			}
 
-					if (!comment) {
-						vscode.window.showErrorMessage("No valid comment received from the API.");
-						return;
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) {
+				vscode.window.showErrorMessage("No active file open.");
+				return;
+			}
+
+			const selectedText = document.getText(range);
+			if (!selectedText) {
+				vscode.window.showErrorMessage("No method detected.");
+				return;
+			}
+
+			const languageId = document.languageId;
+			const config = vscode.workspace.getConfiguration("ai-commenter");
+			const defaultLanguage = config.get<string>("defaultLanguage", "en");
+
+			try {
+				await vscode.window.withProgress(
+					{
+						location: vscode.ProgressLocation.Notification,
+						title: "Generating AI-powered comment...",
+						cancellable: false
+					},
+					async () => {
+						const response = await axios.post("http://localhost:8080/api/comment", {
+							code: selectedText,
+							description: "",
+							codeLanguage: languageId,
+							userLanguage: defaultLanguage
+						});
+
+						const comment = response.data.commentedCode;
+						if (!comment) {
+							vscode.window.showErrorMessage("No valid comment received from the API.");
+							return;
+						}
+
+						await editor.edit(editBuilder => {
+							editBuilder.insert(range.start, comment + "\n");
+						});
+
+						vscode.window.showInformationMessage("Comment successfully added.");
 					}
-
-					// Apply the comment in the selected code
-					editor.edit(editBuilder => {
-						editBuilder.insert(selection.start, comment + "\n");
-					});
-
-					vscode.window.showInformationMessage("Comment successfully added.");
-				}
-			);
-		} catch (error) {
-			vscode.window.showErrorMessage("Error connecting to the API.");
-			console.error(error);
+				);
+			} catch (error) {
+				vscode.window.showErrorMessage("Error connecting to the API.");
+				console.error(error);
+			}
 		}
-	});
+	);
 
-	let changeLangCommand = vscode.commands.registerCommand('ai-commenter.setCommentLanguage', async () => {
-		const languages = ["en", "es", "fr", "de", "it", "pt"];
-		const selectedLang = await vscode.window.showQuickPick(languages, {
-			placeHolder: "Select the language for comments."
-		});
-
-		if (selectedLang) {
-			await vscode.workspace.getConfiguration("ai-commenter").update("defaultLanguage", selectedLang, true);
-			vscode.window.showInformationMessage("Language changed to ${selectedLang}");
-		}
-	});
-	context.subscriptions.push(changeLangCommand);
 	context.subscriptions.push(disposable);
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() { }
+// 🛑 Deactivating the Extension
+export function deactivate() {
+	console.log("AI Commenter Extension deactivated.");
+}
