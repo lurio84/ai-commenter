@@ -49,10 +49,29 @@ public class CommentService {
 
     // Metodo para transformar nuestro DTO al formato de OpenRouter
     private OpenRouterRequestDTO transformToOpenRouterRequest(CodeRequestDTO requestDTO) {
+        // Mapeo de lenguajes a sus formatos de documentación
+        Map<String, String> commentStyles = new HashMap<>();
+        commentStyles.put("java", "JavaDoc");
+        commentStyles.put("python", "Docstring");
+        commentStyles.put("c#", "XMLDoc");
+        commentStyles.put("javascript", "JSDoc");
+        commentStyles.put("typescript", "JSDoc");
+        commentStyles.put("php", "PHPDoc");
+        commentStyles.put("go", "Godoc");
+        commentStyles.put("swift", "SwiftDoc");
+
+        // Convertir el lenguaje a minúsculas para hacer la búsqueda
+        String languageKey = requestDTO.getCodeLanguage().toLowerCase();
+
+        // Obtener el estilo de comentarios basado en el lenguaje, con un valor por
+        // defecto
+        String commentStyle = commentStyles.getOrDefault(languageKey, "block");
+
         List<Map<String, String>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content",
                 "You are a " + requestDTO.getCodeLanguage()
-                        + " documentation assistant. Always return only the JavaDoc comment without any extra text. Language: "
+                        + " documentation assistant. Always return only the " + commentStyle
+                        + " comment without any extra text. Language: "
                         + requestDTO.getUserLanguage()));
         messages.add(Map.of("role", "user", "content",
                 "Comment the following code: " + requestDTO.getCode()));
